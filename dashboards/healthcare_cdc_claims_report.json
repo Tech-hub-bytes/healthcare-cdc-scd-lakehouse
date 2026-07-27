@@ -1,0 +1,502 @@
+{
+  "datasets": [
+    {
+      "name": "ds_claims",
+      "displayName": "Claims (SCD1 facts)",
+      "queryLines": [
+        "SELECT claim_id, patient_id, provider_id, service_date, event_ts,\n",
+        "       icd10_primary, cpt_primary, claim_status,\n",
+        "       billed_amount, paid_amount\n",
+        "FROM fact_claims\n"
+      ],
+      "columns": [
+        {
+          "displayName": "Claim Count",
+          "description": "Number of claims",
+          "expression": "COUNT(`claim_id`)"
+        },
+        {
+          "displayName": "Total Billed",
+          "description": "Sum of billed amounts",
+          "expression": "SUM(`billed_amount`)"
+        },
+        {
+          "displayName": "Total Paid",
+          "description": "Sum of paid amounts",
+          "expression": "SUM(`paid_amount`)"
+        }
+      ]
+    },
+    {
+      "name": "ds_claim_kpis",
+      "displayName": "Claims by status",
+      "queryLines": [
+        "SELECT claim_status, claim_count, total_billed, total_paid, avg_billed\n",
+        "FROM gold_claim_kpis\n"
+      ]
+    },
+    {
+      "name": "ds_by_provider",
+      "displayName": "Claims by provider",
+      "queryLines": [
+        "SELECT provider_id, full_name, specialty, facility,\n",
+        "       claim_count, total_billed, total_paid\n",
+        "FROM gold_claims_by_provider\n"
+      ]
+    },
+    {
+      "name": "ds_patients",
+      "displayName": "Current patients",
+      "queryLines": [
+        "SELECT patient_id, first_name, last_name, gender, zip_code,\n",
+        "       insurance_plan, status, valid_from\n",
+        "FROM gold_patients_current\n"
+      ],
+      "columns": [
+        {
+          "displayName": "Active Patients",
+          "description": "Count of current patient rows",
+          "expression": "COUNT(`patient_id`)"
+        }
+      ]
+    },
+    {
+      "name": "ds_insurance_hist",
+      "displayName": "Patient insurance SCD2 history",
+      "queryLines": [
+        "SELECT patient_id, insurance_plan, zip_code,\n",
+        "       valid_from, valid_to, is_current\n",
+        "FROM gold_patient_insurance_changes\n",
+        "ORDER BY patient_id, valid_from\n"
+      ]
+    },
+    {
+      "name": "ds_monthly",
+      "displayName": "Monthly claim trend",
+      "queryLines": [
+        "SELECT DATE_TRUNC('MONTH', service_date) AS service_month,\n",
+        "       COUNT(*) AS claims,\n",
+        "       ROUND(SUM(billed_amount), 2) AS billed,\n",
+        "       ROUND(SUM(paid_amount), 2) AS paid\n",
+        "FROM fact_claims\n",
+        "GROUP BY 1\n",
+        "ORDER BY 1\n"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "overview",
+      "displayName": "Claims Overview",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layout": [
+        {
+          "widget": {
+            "name": "title",
+            "multilineTextboxSpec": {
+              "lines": ["## Healthcare CDC Lakehouse — Claims Report"]
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 12, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "subtitle",
+            "multilineTextboxSpec": {
+              "lines": ["Gold KPIs from Postgres-style CDC → Bronze → Silver (SCD2 dims / SCD1 claims) → Gold. Schema: `workspace.hc_cdc_lakehouse`."]
+            }
+          },
+          "position": {"x": 0, "y": 1, "width": 12, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "kpi-claims",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_claims",
+                "fields": [
+                  {"name": "measure(Claim Count)", "expression": "MEASURE(`Claim Count`)"}
+                ],
+                "disaggregated": false
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {"fieldName": "measure(Claim Count)", "displayName": "Claims"}
+              },
+              "frame": {"title": "Total Claims", "showTitle": true}
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 3, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "kpi-billed",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_claims",
+                "fields": [
+                  {"name": "monthly(service_date)", "expression": "DATE_TRUNC(\"MONTH\", `service_date`)"},
+                  {"name": "measure(Total Billed)", "expression": "MEASURE(`Total Billed`)"}
+                ],
+                "disaggregated": false,
+                "orders": [{"direction": "ASC", "expression": "DATE_TRUNC(\"MONTH\", `service_date`)"}]
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(Total Billed)",
+                  "displayName": "Billed",
+                  "format": {"type": "number-currency", "currencyCode": "USD", "abbreviation": "compact", "decimalPlaces": {"type": "max", "places": 2}}
+                },
+                "period": {"fieldName": "monthly(service_date)"}
+              },
+              "frame": {"title": "Total Billed", "showTitle": true, "description": "Sparkline by service month", "showDescription": true}
+            }
+          },
+          "position": {"x": 3, "y": 2, "width": 3, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "kpi-paid",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_claims",
+                "fields": [
+                  {"name": "monthly(service_date)", "expression": "DATE_TRUNC(\"MONTH\", `service_date`)"},
+                  {"name": "measure(Total Paid)", "expression": "MEASURE(`Total Paid`)"}
+                ],
+                "disaggregated": false,
+                "orders": [{"direction": "ASC", "expression": "DATE_TRUNC(\"MONTH\", `service_date`)"}]
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(Total Paid)",
+                  "displayName": "Paid",
+                  "format": {"type": "number-currency", "currencyCode": "USD", "abbreviation": "compact", "decimalPlaces": {"type": "max", "places": 2}}
+                },
+                "period": {"fieldName": "monthly(service_date)"}
+              },
+              "frame": {"title": "Total Paid", "showTitle": true}
+            }
+          },
+          "position": {"x": 6, "y": 2, "width": 3, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "kpi-patients",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_patients",
+                "fields": [
+                  {"name": "measure(Active Patients)", "expression": "MEASURE(`Active Patients`)"}
+                ],
+                "disaggregated": false
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {"fieldName": "measure(Active Patients)", "displayName": "Patients"}
+              },
+              "frame": {"title": "Current Patients (SCD2)", "showTitle": true, "description": "__END_AT IS NULL", "showDescription": true}
+            }
+          },
+          "position": {"x": 9, "y": 2, "width": 3, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "bar-status",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_claim_kpis",
+                "fields": [
+                  {"name": "claim_status", "expression": "`claim_status`"},
+                  {"name": "total_billed", "expression": "`total_billed`"},
+                  {"name": "total_paid", "expression": "`total_paid`"}
+                ],
+                "disaggregated": true
+              }
+            }],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {"fieldName": "claim_status", "scale": {"type": "categorical"}, "displayName": "Claim status"},
+                "y": {
+                  "scale": {"type": "quantitative"},
+                  "fields": [
+                    {"fieldName": "total_billed", "displayName": "Billed", "format": {"type": "number-currency", "currencyCode": "USD", "abbreviation": "compact", "decimalPlaces": {"type": "max", "places": 0}}},
+                    {"fieldName": "total_paid", "displayName": "Paid", "format": {"type": "number-currency", "currencyCode": "USD", "abbreviation": "compact", "decimalPlaces": {"type": "max", "places": 0}}}
+                  ]
+                }
+              },
+              "mark": {"layout": "group"},
+              "frame": {"title": "Billed vs Paid by Status", "showTitle": true}
+            }
+          },
+          "position": {"x": 0, "y": 5, "width": 6, "height": 5}
+        },
+        {
+          "widget": {
+            "name": "pie-status",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_claim_kpis",
+                "fields": [
+                  {"name": "claim_status", "expression": "`claim_status`"},
+                  {"name": "claim_count", "expression": "`claim_count`"}
+                ],
+                "disaggregated": true
+              }
+            }],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {"fieldName": "claim_count", "scale": {"type": "quantitative"}},
+                "color": {"fieldName": "claim_status", "scale": {"type": "categorical"}},
+                "label": {"show": true}
+              },
+              "frame": {"title": "Claim Mix by Status", "showTitle": true}
+            }
+          },
+          "position": {"x": 6, "y": 5, "width": 6, "height": 5}
+        },
+        {
+          "widget": {
+            "name": "line-monthly",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_monthly",
+                "fields": [
+                  {"name": "service_month", "expression": "`service_month`"},
+                  {"name": "billed", "expression": "`billed`"},
+                  {"name": "paid", "expression": "`paid`"}
+                ],
+                "disaggregated": true
+              }
+            }],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {"fieldName": "service_month", "scale": {"type": "temporal"}, "displayName": "Service month"},
+                "y": {
+                  "scale": {"type": "quantitative"},
+                  "fields": [
+                    {"fieldName": "billed", "displayName": "Billed", "format": {"type": "number-currency", "currencyCode": "USD", "abbreviation": "compact", "decimalPlaces": {"type": "max", "places": 0}}},
+                    {"fieldName": "paid", "displayName": "Paid", "format": {"type": "number-currency", "currencyCode": "USD", "abbreviation": "compact", "decimalPlaces": {"type": "max", "places": 0}}}
+                  ]
+                }
+              },
+              "frame": {"title": "Monthly Billed & Paid Trend", "showTitle": true}
+            }
+          },
+          "position": {"x": 0, "y": 10, "width": 7, "height": 5}
+        },
+        {
+          "widget": {
+            "name": "bar-provider",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_by_provider",
+                "fields": [
+                  {"name": "full_name", "expression": "`full_name`"},
+                  {"name": "total_billed", "expression": "`total_billed`"},
+                  {"name": "total_paid", "expression": "`total_paid`"}
+                ],
+                "disaggregated": true
+              }
+            }],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "y": {"fieldName": "full_name", "scale": {"type": "categorical"}, "displayName": "Provider"},
+                "x": {
+                  "scale": {"type": "quantitative"},
+                  "fields": [
+                    {"fieldName": "total_billed", "displayName": "Billed", "format": {"type": "number-currency", "currencyCode": "USD", "abbreviation": "compact", "decimalPlaces": {"type": "max", "places": 0}}},
+                    {"fieldName": "total_paid", "displayName": "Paid", "format": {"type": "number-currency", "currencyCode": "USD", "abbreviation": "compact", "decimalPlaces": {"type": "max", "places": 0}}}
+                  ]
+                }
+              },
+              "mark": {"layout": "group"},
+              "frame": {"title": "Billed vs Paid by Provider", "showTitle": true}
+            }
+          },
+          "position": {"x": 7, "y": 10, "width": 5, "height": 5}
+        },
+        {
+          "widget": {
+            "name": "tbl-provider",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_by_provider",
+                "fields": [
+                  {"name": "full_name", "expression": "`full_name`"},
+                  {"name": "specialty", "expression": "`specialty`"},
+                  {"name": "facility", "expression": "`facility`"},
+                  {"name": "claim_count", "expression": "`claim_count`"},
+                  {"name": "total_billed", "expression": "`total_billed`"},
+                  {"name": "total_paid", "expression": "`total_paid`"}
+                ],
+                "disaggregated": true
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "full_name", "displayName": "Provider"},
+                  {"fieldName": "specialty", "displayName": "Specialty"},
+                  {"fieldName": "facility", "displayName": "Facility"},
+                  {"fieldName": "claim_count", "displayName": "Claims"},
+                  {"fieldName": "total_billed", "displayName": "Billed", "format": {"type": "number-currency", "currencyCode": "USD", "decimalPlaces": {"type": "exact", "places": 2}}},
+                  {"fieldName": "total_paid", "displayName": "Paid", "format": {"type": "number-currency", "currencyCode": "USD", "decimalPlaces": {"type": "exact", "places": 2}}}
+                ]
+              },
+              "frame": {"title": "Provider Detail", "showTitle": true}
+            }
+          },
+          "position": {"x": 0, "y": 15, "width": 12, "height": 4}
+        }
+      ]
+    },
+    {
+      "name": "scd2",
+      "displayName": "SCD2 Patients",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layout": [
+        {
+          "widget": {
+            "name": "scd2-title",
+            "multilineTextboxSpec": {
+              "lines": ["## Patient Dimension — SCD Type 2"]
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 12, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "scd2-subtitle",
+            "multilineTextboxSpec": {
+              "lines": ["Current attributes vs full insurance/zip history from Auto CDC (`__START_AT` / `__END_AT`)."]
+            }
+          },
+          "position": {"x": 0, "y": 1, "width": 12, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "tbl-current-patients",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_patients",
+                "fields": [
+                  {"name": "patient_id", "expression": "`patient_id`"},
+                  {"name": "first_name", "expression": "`first_name`"},
+                  {"name": "last_name", "expression": "`last_name`"},
+                  {"name": "zip_code", "expression": "`zip_code`"},
+                  {"name": "insurance_plan", "expression": "`insurance_plan`"},
+                  {"name": "status", "expression": "`status`"},
+                  {"name": "valid_from", "expression": "`valid_from`"}
+                ],
+                "disaggregated": true
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "patient_id", "displayName": "Patient"},
+                  {"fieldName": "first_name", "displayName": "First"},
+                  {"fieldName": "last_name", "displayName": "Last"},
+                  {"fieldName": "zip_code", "displayName": "ZIP"},
+                  {"fieldName": "insurance_plan", "displayName": "Insurance"},
+                  {"fieldName": "status", "displayName": "Status"},
+                  {"fieldName": "valid_from", "displayName": "Valid from"}
+                ]
+              },
+              "frame": {"title": "Current Patients", "showTitle": true}
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 12, "height": 5}
+        },
+        {
+          "widget": {
+            "name": "tbl-insurance-hist",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_insurance_hist",
+                "fields": [
+                  {"name": "patient_id", "expression": "`patient_id`"},
+                  {"name": "insurance_plan", "expression": "`insurance_plan`"},
+                  {"name": "zip_code", "expression": "`zip_code`"},
+                  {"name": "valid_from", "expression": "`valid_from`"},
+                  {"name": "valid_to", "expression": "`valid_to`"},
+                  {"name": "is_current", "expression": "`is_current`"}
+                ],
+                "disaggregated": true
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "patient_id", "displayName": "Patient"},
+                  {"fieldName": "insurance_plan", "displayName": "Insurance plan"},
+                  {"fieldName": "zip_code", "displayName": "ZIP"},
+                  {"fieldName": "valid_from", "displayName": "Valid from"},
+                  {"fieldName": "valid_to", "displayName": "Valid to"},
+                  {"fieldName": "is_current", "displayName": "Current?"}
+                ]
+              },
+              "frame": {"title": "Insurance / ZIP Change History (SCD2)", "showTitle": true}
+            }
+          },
+          "position": {"x": 0, "y": 7, "width": 12, "height": 7}
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {"light": "#F7F9FB", "dark": "#1F272D"},
+      "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#11171C"},
+      "widgetBorderColor": {"light": "#FFFFFF", "dark": "#11171C"},
+      "fontColor": {"light": "#1A2332", "dark": "#E8ECF0"},
+      "selectionColor": {"light": "#0B6E4F", "dark": "#5DCCA0"},
+      "visualizationColors": [
+        "#0B6E4F", "#2272B4", "#E45756", "#F58518",
+        "#54A24B", "#4C78A8", "#B279A2"
+      ],
+      "widgetHeaderAlignment": "LEFT",
+      "widgetCornerRadius": 8
+    }
+  }
+}

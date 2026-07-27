@@ -1,0 +1,27 @@
+# Seed simulated Postgres CDC landing files, then refresh the lakehouse pipeline.
+
+resources:
+  jobs:
+    cdc_lakehouse_job:
+      name: healthcare_cdc_scd_lakehouse
+      max_concurrent_runs: 1
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+
+      tasks:
+        - task_key: seed_postgres_cdc
+          notebook_task:
+            notebook_path: ../src/seed/seed_postgres_cdc.py
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+
+        - task_key: refresh_pipeline
+          depends_on:
+            - task_key: seed_postgres_cdc
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.healthcare_cdc_scd_etl.id}

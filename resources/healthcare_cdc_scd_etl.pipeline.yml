@@ -1,0 +1,20 @@
+# Lakeflow Declarative Pipeline: Postgres-style CDC → SCD2 dims → Gold KPIs
+
+resources:
+  pipelines:
+    healthcare_cdc_scd_etl:
+      name: healthcare_cdc_scd_etl
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      serverless: true
+      root_path: "../src/healthcare_cdc_scd_etl"
+      configuration:
+        cdc.landing_root: /Volumes/${var.catalog}/${var.schema}/cdc_landing
+
+      libraries:
+        - glob:
+            include: ../src/healthcare_cdc_scd_etl/transformations/**
+
+      environment:
+        dependencies:
+          - --editable ${workspace.file_path}
